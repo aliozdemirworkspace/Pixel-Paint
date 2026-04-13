@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pixel Paint</title>
+  <style>
+    :root {
+      --bg: #0a0a0c;
+      --panel: #16161c;
+      --accent: #6ee7b7;
+      --accent-dim: #34d399;
+      --text: #e8e8ed;
+      --muted: #8888a0;
+      --danger: #f87171;
+      --locked: #3f3f4a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+      background: radial-gradient(ellipse 120% 80% at 50% -20%, #1a1a24, var(--bg));
+      color: var(--text);
+      overflow-x: hidden;
+    }
+    #app { max-width: 960px; margin: 0 auto; padding: 16px; }
+    h1 {
+      font-size: clamp(1.5rem, 4vw, 2rem);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin: 8px 0 20px;
+      text-align: center;
+      background: linear-gradient(90deg, #a5f3fc, var(--accent), #fcd34d);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .screen { display: none; }
+    .screen.active { display: block; animation: fadeIn 0.35s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+    .level-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+      gap: 10px;
+      padding: 8px 0 24px;
+    }
+    .level-btn {
+      position: relative;
+      aspect-ratio: 1;
+      border: 2px solid #2a2a34;
+      border-radius: 10px;
+      background: linear-gradient(145deg, #22222c, #18181e);
+      color: var(--text);
+      font: bold 1.1rem/1 inherit;
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+    }
+    .level-btn:not(:disabled):hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(110, 231, 183, 0.15);
+    }
+    .level-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      background: var(--locked);
+    }
+    .level-btn .lock {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      pointer-events: none;
+    }
+    .level-btn .meta {
+      position: absolute;
+      bottom: 4px;
+      right: 6px;
+      font-size: 0.55rem;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .level-btn .tick {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      font-size: 0.65rem;
+      color: var(--accent-dim);
+    }
+
+    .game-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .canvas-box {
+      position: relative;
+      background: #050508;
+      border-radius: 12px;
+      padding: 8px;
+      box-shadow: inset 0 0 0 1px #2a2a32, 0 16px 48px rgba(0,0,0,0.45);
+    }
+    #gameCanvas {
+      display: block;
+      cursor: crosshair;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      max-width: min(92vw, 520px);
+      height: auto;
+    }
+    .hud {
+      width: 100%;
+      max-width: 520px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+    .progress-wrap {
+      flex: 1 1 200px;
+      min-width: 160px;
+    }
+    .progress-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 4px; }
+    .progress-bar {
+      height: 12px;
+      border-radius: 6px;
+      background: #222;
+      overflow: hidden;
+      border: 1px solid #333;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #22c55e, var(--accent));
+      transition: width 0.12s ease;
+    }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    button.ui {
+      font: 0.8rem inherit;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid #3f3f4c;
+      background: #24242e;
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button.ui:hover { background: #2e2e3a; border-color: var(--accent); }
+    .spray-hint { font-size: 0.7rem; color: var(--muted); }
+    .spray-hint kbd {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #1e1e26;
+      border: 1px solid #3a3a44;
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 50;
+    }
+    #burstCanvas {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .unlock-banner {
+      position: fixed;
+      left: 50%;
+      top: 38%;
+      transform: translate(-50%, -50%) scale(0.3);
+      opacity: 0;
+      z-index: 60;
+      font-size: clamp(1.2rem, 5vw, 2.2rem);
+      font-weight: bold;
+      letter-spacing: 0.15em;
+      text-align: center;
+      color: #fef08a;
+      text-shadow: 0 0 24px rgba(250, 204, 21, 0.8), 0 4px 0 #b45309;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .unlock-banner.show {
+      animation: unlockPop 1.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+    @keyframes unlockPop {
+      0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3); }
+      35% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+      55% { transform: translate(-50%, -50%) scale(1); }
+      100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
+
+    .legend {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-align: center;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>Pixel Paint</h1>
+
+    <div id="menuScreen" class="screen active">
+      <p class="legend">Üst katmandaki kirli dokuyu sprey ile temizleyin. Seviye tamamlamak için şeklin en az <strong>%95</strong>&rsquo;ini açın.</p>
+      <div id="levelGrid" class="level-grid"></div>
+    </div>
+
+    <div id="gameScreen" class="screen">
+      <div class="game-wrap">
+        <div class="canvas-box">
+          <canvas id="gameCanvas" width="512" height="512"></canvas>
+        </div>
+        <div class="hud">
+          <div class="progress-wrap">
+            <div class="progress-label">İlerleme / Progress</div>
+            <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+            <div id="progressText" style="font-size:0.75rem;margin-top:4px;color:var(--muted);">0%</div>
+          </div>
+          <div class="btn-row">
+            <button type="button" class="ui" id="btnMenu">Menü</button>
+            <button type="button" class="ui" id="btnRestart">Yeniden</button>
+          </div>
+        </div>
+        <p class="spray-hint">Sprey: <strong id="sprayHud">2</strong> — <kbd>1</kbd> küçük · <kbd>2</kbd> orta · <kbd>3</kbd> büyük</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay"></div>
+  <canvas id="burstCanvas"></canvas>
+  <div id="unlockBanner" class="unlock-banner">LEVEL UNLOCKED</div>
+
+  <script>
+(function () {
+  "use strict";
+
+  const STORAGE_KEY = "pixelPaint_v1";
+  const WIN_THRESHOLD = 0.95;
+  const DIRT_CLEAR_ALPHA = 255 * 0.05;
+  const CANVAS_CSS = 512;
+
+  /** Seeded RNG for reproducible hard levels */
+  function mulberry32(a) {
+    return function () {
+      a |= 0;
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function cellNoise(ix, iy, seed) {
+    let n = ix * 374761393 + iy * 668265263 + seed * 1442695040888963407;
+    n = (n ^ (n >>> 13)) * 1274126177;
+    return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+  }
+
+  function parsePatternLines(lines, palette) {
+    const h = lines.length;
+    const w = lines[0].length;
+    const shape = new Uint8Array(w * h);
+    const colors = new Float32Array(w * h * 3);
+    const bg = palette["."] || [0.08, 0.08, 0.1];
+    for (let y = 0; y < h; y++) {
+      const row = lines[y];
+      for (let x = 0; x < w; x++) {
+        const ch = row[x];
+        const i = y * w + x;
+        if (ch === " " || ch === "." || !(ch in palette)) {
+          shape[i] = 0;
+          colors[i * 3] = bg[0];
+          colors[i * 3 + 1] = bg[1];
+          colors[i * 3 + 2] = bg[2];
+        } else {
+          shape[i] = 1;
+          const c = palette[ch] || palette["#"] || [1, 1, 1];
+          colors[i * 3] = c[0];
+          colors[i * 3 + 1] = c[1];
+          colors[i * 3 + 2] = c[2];
+        }
+      }
+    }
+    return { w, h, shape, colors };
+  }
+
+  /** ─── 20 benzersiz pattern (string grid veya üretici) ─── */
+  const PATTERN_LIBRARY = {
+    L1_kare: [
+      "........",
+      ".######.",
+      ".#....#.",
+      ".#....#.",
+      ".#....#.",
+      ".#....#.",
+      ".######.",
+      "........",
+    ],
+    L2_ic_kare: [
+      "........",
+      "........",
+      "..####..",
+      "..#..#..",
+      "..#..#..",
+      "..####..",
+      "........",
+      "........",
+    ],
+    L3_artı: [
+      "........",
+      "....#...",
+      "....#...",
+      ".######.",
+      "....#...",
+      "....#...",
+      "........",
+      "........",
+    ],
+    L4_L: [
+      "........",
+      ".###....",
+      "...#....",
+      "...#....",
+      "...#....",
+      "...####.",
+      "........",
+      "........",
+    ],
+    L5_ok: [
+      "........",
+      "....#...",
+      "...###..",
+      "..#####.",
+      "...###..",
+      "....#...",
+      "........",
+      "........",
+    ],
+    // 16x16 — kalp
+    L6_kalp: [
+      "................",
+      "................",
+      "...##....##.....",
+      "..####..####....",
+      "..##########....",
+      "...########.....",
+      "....######......",
+      ".....####.......",
+      "......##........",
+      "................",
+      "................",
+      "................",
+      "................",
+      "................",
+      "................",
+      "................",
+    ],
+    L7_gulen: [
+      "................",
+      ".....#....#.....",
+      ".....#....#.....",
+      "................",
+      "................",
+      "...#........#...",
+      "...#........#...",
+      "....#......#....",
+      ".....######.....",
+      "................",
+      "................",
+      "................",
+      "................",
+      "................",
+      "................",
+      "................",
+    ],
+    L8_ev: [
+      "................",
+      "........#.......",
+      ".......###......",
+      "......#####.....",
+      ".....#######....",
+      "....#########...",
+      "...###########..",
+      "..#############.",
+      "..#...........#.",
+      "..#...........#.",
+      "..#...........#.",
+      "..#############.",
+      "..#...........#.",
+      "..#############.",
+      "................",
+      "................",
+    ],
+    L9_kilic: [
+      "................",
+      ".......##.......",
+      "......####......",
+      ".....##..##.....",
+      "....##....##....",
+      "...##......##...",
+      "..##........##..",
+      ".##..........##.",
+      "...............#",
+      "...............#",
+      "..............##",
+      ".............##.",
+      "............##..",
+      "...........##...",
+      "..........##....",
+      "................",
+    ],
+    L10_yildiz: [
+      "................",
+      "........#.......",
+      "........#.......",
+      "....#########...",
+      "......#####.....",
+      ".....##.#.##....",
+      "....##..#..##...",
+      "...##...#...##..",
+      "..############..",
+      ".......###......",
+      "......#####.....",
+      ".....#######....",
+      "................",
+      "................",
+      "................",
+      "................",
+    ],
+    L11_elmas: [
+      "................",
+      "................",
+      "........#.......",
+      ".......###......",
+      "......#####.....",
+      ".....#######....",
+      "......#####.....",
+      ".......###......",
+      "........#.......",
+      "................",
+      "................",
+      "................",
+      "................",
+      "................",
+      "................",
+      "................",
+    ],
+    L12_spiral: [
+      "################",
+      "#..............#",
+      "#.############.#",
+      "#.#..........#.#",
+      "#.#.########.#.#",
+      "#.#.#......#.#.#",
+      "#.#.#.####.#.#.#",
+      "#.#.#.#..#.#.#.#",
+      "#.#.#.##.#.#.#.#",
+      "#.#.#....#.#.#.#",
+      "#.#.######.#.#.#",
+      "#.#........#.#.#",
+      "#.##########.#.#",
+      "#............#.#",
+      "##############.#",
+      "################",
+    ],
+    L13_agac: [
+      "................",
+      ".......##.......",
+      "......####......",
+      ".....######.....",
+      "....########....",
+      ".......##.......",
+      "......####......",
+      ".....######.....",
+      "......####......",
+      ".......##.......",
+      ".......##.......",
+      "......####......",
+      ".....######.....",
+      "......####......",
+      ".......##.......",
+      "................",
+    ],
+    L14_bayrak: [
+      "................",
+      "################",
+      "#..............#",
+      "#..############.",
+      "#..#..........#.",
+      "#..#..........#.",
+      "#..#..........#.",
+      "#..############.",
+      "#..............#",
+      "################",
+      "................",
+      "................",
+      "................",
+      "................",
+      "................",
+      "................",
+    ],
+    L15_kelebek: [
+      "................",
+      "................",
+      "..##......##....",
+      ".####....####...",
+      ".#..#....#..#...",
+      "..##..##..##....",
+      "....######......",
+      "......##........",
+      "......##........",
+      "....######......",
+      "..##..##..##....",
+      ".#..#....#..#...",
+      ".####....####...",
+      "..##......##....",
+      "................",
+      "................",
+    ],
+  };
+
+  const PAL_EASY = {
+    ".": [0.06, 0.06, 0.08],
+    "#": [0.2, 0.85, 0.65],
+  };
+  const PAL_MED = {
+    ".": [0.06, 0.06, 0.08],
+    "#": [0.95, 0.45, 0.45],
+    "@": [1, 0.85, 0.35],
+    "o": [0.35, 0.55, 0.95],
+    "+": [0.9, 0.9, 0.95],
+  };
+
+  /** L12 spiral palette: # = wall paint */
+  const PAL_SPIRAL = {
+    ".": [0.06, 0.06, 0.08],
+    "#": [0.45, 0.75, 1],
+  };
+
+  function buildLevelDataFromLibrary(key, palette) {
+    const lines = PATTERN_LIBRARY[key];
+    return parsePatternLines(lines, palette);
+  }
+
+  /** Karmaşık 32x32 procedural pattern — level id ile tohum */
+  function generateHardPattern(levelIndex, seed) {
+    const w = 32, h = 32;
+    const rng = mulberry32(seed * 999983 + levelIndex * 12582917);
+    const shape = new Uint8Array(w * h);
+    const colors = new Float32Array(w * h * 3);
+
+    const palette = [
+      [0.95, 0.35, 0.55],
+      [0.35, 0.85, 0.95],
+      [0.85, 0.85, 0.35],
+      [0.55, 0.45, 0.95],
+    ];
+
+    if (levelIndex === 16) {
+      /** radial bağlantı ağları */
+      const cx = 16, cy = 16;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const d = Math.hypot(x - cx, y - cy);
+          const a = Math.atan2(y - cy, x - cx);
+          const wave = Math.sin(d * 0.35 + a * 3 + seed * 0.01) > 0.15;
+          const ring = Math.abs((d + seed % 7) % 6 - 3) < 0.9;
+          if (wave && ring && d < 15) {
+            const i = y * w + x;
+            shape[i] = 1;
+            const p = palette[Math.floor(cellNoise(x, y, seed) * 4) % 4];
+            colors[i * 3] = p[0];
+            colors[i * 3 + 1] = p[1];
+            colors[i * 3 + 2] = p[2];
+          }
+        }
+      }
+    } else if (levelIndex === 17) {
+      /** hücresel otomat benzeri */
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const n = cellNoise(x >> 2, y >> 2, seed);
+          const m = cellNoise(x, y, seed + 1);
+          if (n > 0.42 && m > 0.35) {
+            const i = y * w + x;
+            shape[i] = 1;
+            const p = palette[(x ^ y ^ seed) & 3];
+            colors[i * 3] = p[0] * (0.85 + 0.15 * m);
+            colors[i * 3 + 1] = p[1] * (0.85 + 0.15 * m);
+            colors[i * 3 + 2] = p[2] * (0.85 + 0.15 * m);
+          }
+        }
+      }
+    } else if (levelIndex === 18) {
+      /** fractal dalga */
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const nx = x / w, ny = y / h;
+          const v =
+            Math.sin((nx * 12 + seed * 0.01) * Math.PI * 2) *
+            Math.cos((ny * 10 - seed * 0.02) * Math.PI * 2);
+          const blob = Math.sin(nx * 20 + v) + Math.cos(ny * 18 - v * 0.5);
+          if (blob > 0.35 && blob < 1.85) {
+            const i = y * w + x;
+            shape[i] = 1;
+            const p = palette[Math.floor((x + y + seed) % 4)];
+            colors[i * 3] = p[0];
+            colors[i * 3 + 1] = p[1];
+            colors[i * 3 + 2] = p[2];
+          }
+        }
+      }
+    } else if (levelIndex === 19) {
+      /** labirent izleri — random walk yoğunluğu */
+      const visited = new Uint8Array(w * h);
+      let px = (seed % 24) + 4, py = (seed * 7 % 24) + 4;
+      for (let s = 0; s < 4800; s++) {
+        const i = py * w + px;
+        visited[i] = 1;
+        const dir = Math.floor(rng() * 4);
+        if (dir === 0) px = Math.min(w - 2, px + 1);
+        else if (dir === 1) px = Math.max(1, px - 1);
+        else if (dir === 2) py = Math.min(h - 2, py + 1);
+        else py = Math.max(1, py - 1);
+      }
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const i = y * w + x;
+          if (visited[i]) {
+            shape[i] = 1;
+            const p = palette[(x * y + seed) % 4];
+            colors[i * 3] = p[0];
+            colors[i * 3 + 1] = p[1];
+            colors[i * 3 + 2] = p[2];
+          }
+        }
+      }
+    } else {
+      /** L20: Voronoi hücre kenarları */
+      const pts = [];
+      const np = 18 + (seed % 8);
+      for (let p = 0; p < np; p++) {
+        pts.push({ x: rng() * w, y: rng() * h });
+      }
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          let d1 = 1e9, d2 = 1e9;
+          let bi = -1;
+          for (let pi = 0; pi < pts.length; pi++) {
+            const d = Math.hypot(x - pts[pi].x, y - pts[pi].y);
+            if (d < d1) {
+              d2 = d1;
+              d1 = d;
+              bi = pi;
+            } else if (d < d2) d2 = d;
+          }
+          if (d2 - d1 < 1.1) {
+            const i = y * w + x;
+            shape[i] = 1;
+            const p = palette[bi % 4];
+            colors[i * 3] = p[0];
+            colors[i * 3 + 1] = p[1];
+            colors[i * 3 + 2] = p[2];
+          }
+        }
+      }
+    }
+
+    /** boş bırakılmışsa minimal doldurma */
+    let any = false;
+    for (let i = 0; i < shape.length; i++) if (shape[i]) any = true;
+    if (!any) {
+      for (let y = 8; y < 24; y++) {
+        for (let x = 8; x < 24; x++) {
+          const i = y * w + x;
+          shape[i] = 1;
+          colors[i * 3] = 0.5;
+          colors[i * 3 + 1] = 0.9;
+          colors[i * 3 + 2] = 0.6;
+        }
+      }
+    }
+
+    return { w, h, shape, colors };
+  }
+
+  class Level {
+    /**
+     * @param {number} id 1–20
+     * @param {number} gridSize 8 | 16 | 32
+     * @param {string} patternType kitaplık anahtarı veya 'hard'
+     * @param {{ w:number,h:number,shape:Uint8Array,colors:Float32Array }} patternData
+     */
+    constructor(id, gridSize, patternType, patternData) {
+      this.id = id;
+      this.gridSize = gridSize;
+      this.patternType = patternType;
+      this.patternData = patternData;
+    }
+
+    static create(id) {
+      let gridSize;
+      let type;
+      let data;
+
+      if (id <= 5) {
+        gridSize = 8;
+        const keys = ["L1_kare", "L2_ic_kare", "L3_artı", "L4_L", "L5_ok"];
+        type = keys[id - 1];
+        data = buildLevelDataFromLibrary(type, PAL_EASY);
+      } else if (id <= 15) {
+        gridSize = 16;
+        const keys = [
+          "L6_kalp", "L7_gulen", "L8_ev", "L9_kilic", "L10_yildiz",
+          "L11_elmas", "L12_spiral", "L13_agac", "L14_bayrak", "L15_kelebek",
+        ];
+        type = keys[id - 6];
+        const pal = type === "L12_spiral" ? PAL_SPIRAL : PAL_MED;
+        data = buildLevelDataFromLibrary(type, pal);
+      } else {
+        gridSize = 32;
+        type = "hard_" + id;
+        data = generateHardPattern(id, 1000 + id * 137);
+      }
+
+      return new Level(id, gridSize, type, data);
+    }
+
+    getShapeBits() {
+      return this.patternData.shape;
+    }
+
+    getTargetColors() {
+      return this.patternData.colors;
+    }
+  }
+
+  class GameState {
+    constructor() {
+      this.maxUnlocked = 1;
+      this.completed = {};
+      this.load();
+    }
+
+    load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const o = JSON.parse(raw);
+          if (typeof o.maxUnlocked === "number") this.maxUnlocked = Math.max(1, Math.min(20, o.maxUnlocked));
+          if (o.completed && typeof o.completed === "object") this.completed = o.completed;
+        }
+      } catch (_) {}
+    }
+
+    save() {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ maxUnlocked: this.maxUnlocked, completed: this.completed })
+      );
+    }
+
+    isLevelUnlocked(n) {
+      return n <= this.maxUnlocked;
+    }
+
+    markCompleted(levelId) {
+      this.completed[levelId] = true;
+      if (levelId === this.maxUnlocked && levelId < 20) this.maxUnlocked = levelId + 1;
+      this.save();
+    }
+  }
+
+  class PixelSurface {
+    /**
+     * @param {Level} level
+     */
+    constructor(level) {
+      this.level = level;
+      const w = level.patternData.w;
+      const h = level.patternData.h;
+      this.w = w;
+      this.h = h;
+      const n = w * h;
+      this.pixels = new Uint8ClampedArray(n * 4);
+      this.shapeMask = level.getShapeBits();
+      const tc = level.getTargetColors();
+
+      for (let i = 0; i < n; i++) {
+        const o = i * 4;
+        this.pixels[o] = Math.round(tc[i * 3] * 255);
+        this.pixels[o + 1] = Math.round(tc[i * 3 + 1] * 255);
+        this.pixels[o + 2] = Math.round(tc[i * 3 + 2] * 255);
+        this.pixels[o + 3] = 255;
+      }
+    }
+
+    /** dirt alpha: 255 tam kirli, 0 tamamen açıldı */
+    dirtAlphaAt(idx) {
+      return this.pixels[idx * 4 + 3];
+    }
+
+    checkWinCondition() {
+      const p = this.pixels;
+      const mask = this.shapeMask;
+      const len = this.w * this.h;
+      let total = 0;
+      let cleared = 0;
+      for (let i = 0; i < len; i++) {
+        if (!mask[i]) continue;
+        total++;
+        if (p[i * 4 + 3] <= DIRT_CLEAR_ALPHA) cleared++;
+      }
+      if (total === 0) return true;
+      return cleared / total >= WIN_THRESHOLD;
+    }
+
+    getCleanProgress() {
+      const p = this.pixels;
+      const mask = this.shapeMask;
+      let total = 0;
+      let cleared = 0;
+      for (let i = 0; i < this.w * this.h; i++) {
+        if (!mask[i]) continue;
+        total++;
+        if (p[i * 4 + 3] <= DIRT_CLEAR_ALPHA) cleared++;
+      }
+      if (total === 0) return 1;
+      return cleared / total;
+    }
+
+    splatterErase(gx, gy, brushRadiusCells, spreadMul) {
+      const w = this.w;
+      const h = this.h;
+      const count = Math.floor(12 + brushRadiusCells * 14 * spreadMul);
+      for (let n = 0; n < count; n++) {
+        const u = Math.random() + Math.random() - 1;
+        const v = Math.random() + Math.random() - 1;
+        const r = brushRadiusCells * (0.15 + 0.85 * Math.pow(Math.random(), 0.45));
+        const px = gx + u * r;
+        const py = gy + v * r;
+        const ix = Math.floor(px + 0.5);
+        const iy = Math.floor(py + 0.5);
+        if (ix < 0 || iy < 0 || ix >= w || iy >= h) continue;
+        const idx = iy * w + ix;
+        const o = idx * 4;
+        const onShape = this.shapeMask[idx];
+        const strip = (onShape ? 22 : 12) + Math.floor(Math.random() * (onShape ? 38 : 22));
+        const newA = this.pixels[o + 3] - strip;
+        this.pixels[o + 3] = newA < 0 ? 0 : newA;
+        /** komşu piksellere sıçrama */
+        if (Math.random() < 0.4) {
+          const ox = (Math.random() < 0.5 ? -1 : 1) * (Math.random() < 0.5 ? 1 : 0);
+          const oy = (Math.random() < 0.5 ? -1 : 1) * (Math.random() < 0.5 ? 1 : 0);
+          const jx = ix + ox;
+          const jy = iy + oy;
+          if (jx >= 0 && jy >= 0 && jx < w && jy < h) {
+            const j = jy * w + jx;
+            const o2 = j * 4;
+            const s2 = Math.floor(strip * 0.45);
+            const na = this.pixels[o2 + 3] - s2;
+            this.pixels[o2 + 3] = na < 0 ? 0 : na;
+          }
+        }
+      }
+    }
+  }
+
+  class Renderer {
+    constructor(canvas) {
+      this.canvas = canvas;
+      this.ctx = canvas.getContext("2d", { alpha: false });
+    }
+
+    /**
+     * @param {PixelSurface} surface
+     */
+    render(surface) {
+      const c = this.canvas;
+      const ctx = this.ctx;
+      const w = surface.w;
+      const h = surface.h;
+      const p = surface.pixels;
+      const img = ctx.createImageData(w, h);
+      const d = img.data;
+
+      const baseR = 0x11, baseG = 0x11, baseB = 0x11;
+
+      for (let i = 0; i < w * h; i++) {
+        const o = i * 4;
+        const tr = p[o];
+        const tg = p[o + 1];
+        const tb = p[o + 2];
+        const a = p[o + 3] / 255;
+        const noise = (cellNoise(i % w, (i / w) | 0, surface.level.id * 77) - 0.5) * 0.14;
+        const dr = Math.min(255, Math.max(0, baseR + noise * 255));
+        const dg = Math.min(255, Math.max(0, baseG + noise * 255));
+        const db = Math.min(255, Math.max(0, baseB + noise * 255));
+        const inv = 1 - a;
+        d[o] = Math.round(dr * a + tr * inv);
+        d[o + 1] = Math.round(dg * a + tg * inv);
+        d[o + 2] = Math.round(db * a + tb * inv);
+        d[o + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+  }
+
+  class BurstParticles {
+    constructor() {
+      this.canvas = document.getElementById("burstCanvas");
+      this.ctx = this.canvas.getContext("2d");
+      this.particles = [];
+      this.animating = false;
+    }
+
+    resize() {
+      this.canvas.width = innerWidth;
+      this.canvas.height = innerHeight;
+    }
+
+    burstFromGrid(canvasRect, surface, cellScreen) {
+      this.resize();
+      const parts = [];
+      const p = surface.pixels;
+      const mask = surface.shapeMask;
+      for (let i = 0; i < surface.w * surface.h; i++) {
+        if (!mask[i] || p[i * 4 + 3] > DIRT_CLEAR_ALPHA + 5) continue;
+        const x = i % surface.w;
+        const y = (i / surface.w) | 0;
+        const cx = canvasRect.left + (x + 0.5) * cellScreen;
+        const cy = canvasRect.top + (y + 0.5) * cellScreen;
+        const pr = p[i * 4];
+        const pg = p[i * 4 + 1];
+        const pb = p[i * 4 + 2];
+        const ang = Math.random() * Math.PI * 2;
+        const spd = 3 + Math.random() * 8;
+        parts.push({
+          x: cx,
+          y: cy,
+          vx: Math.cos(ang) * spd,
+          vy: Math.sin(ang) * spd - 2,
+          life: 1,
+          r: 2 + Math.random() * 3,
+          rgb: `rgb(${pr},${pg},${pb})`,
+        });
+      }
+      this.particles = parts;
+      this.animating = parts.length > 0;
+      this.last = performance.now();
+      if (this.animating) requestAnimationFrame((t) => this.tick(t));
+    }
+
+    tick(t) {
+      if (!this.animating) return;
+      const dt = Math.min(0.05, (t - this.last) / 1000);
+      this.last = t;
+      const ctx = this.ctx;
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      let alive = 0;
+      for (const q of this.particles) {
+        q.vy += 520 * dt;
+        q.x += q.vx * 60 * dt;
+        q.y += q.vy * 60 * dt;
+        q.life -= dt * 0.85;
+        if (q.life > 0) {
+          alive++;
+          ctx.globalAlpha = Math.max(0, q.life);
+          ctx.fillStyle = q.rgb;
+          ctx.fillRect(q.x - q.r, q.y - q.r, q.r * 2, q.r * 2);
+        }
+      }
+      ctx.globalAlpha = 1;
+      if (alive > 0) requestAnimationFrame((x) => this.tick(x));
+      else {
+        this.animating = false;
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      }
+    }
+  }
+
+  class Game {
+    constructor() {
+      this.state = new GameState();
+      this.canvas = document.getElementById("gameCanvas");
+      this.renderer = new Renderer(this.canvas);
+      this.burst = new BurstParticles();
+      this.currentLevelId = 1;
+      this.surface = null;
+      this.spraySize = 2;
+      this.painting = false;
+      this.won = false;
+
+      this.elMenu = document.getElementById("menuScreen");
+      this.elGame = document.getElementById("gameScreen");
+      this.elProgress = document.getElementById("progressFill");
+      this.elProgressText = document.getElementById("progressText");
+      this.elUnlock = document.getElementById("unlockBanner");
+      this.elSprayHud = document.getElementById("sprayHud");
+
+      document.getElementById("btnMenu").onclick = () => this.showMenu();
+      document.getElementById("btnRestart").onclick = () => this.restartLevel();
+
+      window.addEventListener("keydown", (e) => {
+        if (!this.elGame.classList.contains("active")) return;
+        if (e.key === "1") this.spraySize = 1;
+        if (e.key === "2") this.spraySize = 2;
+        if (e.key === "3") this.spraySize = 3;
+        this.syncSprayHud();
+      });
+
+      const endPaint = () => {
+        this.painting = false;
+      };
+
+      this.canvas.addEventListener("mousedown", (e) => {
+        if (this.won) return;
+        this.painting = true;
+        this.sprayAtEvent(e);
+      });
+      window.addEventListener("mouseup", endPaint);
+      this.canvas.addEventListener("mouseleave", endPaint);
+      this.canvas.addEventListener("mousemove", (e) => {
+        if (this.painting && !this.won) this.sprayAtEvent(e);
+      });
+
+      const tpOpt = { passive: false };
+      this.canvas.addEventListener(
+        "touchstart",
+        (e) => {
+          if (this.won) return;
+          e.preventDefault();
+          this.painting = true;
+          this.sprayAtEvent(e);
+        },
+        tpOpt
+      );
+      this.canvas.addEventListener(
+        "touchmove",
+        (e) => {
+          if (!this.painting || this.won) return;
+          e.preventDefault();
+          this.sprayAtEvent(e);
+        },
+        tpOpt
+      );
+      window.addEventListener("touchend", endPaint);
+      window.addEventListener("touchcancel", endPaint);
+
+      this.showMenu();
+    }
+
+    buildMenu() {
+      const grid = document.getElementById("levelGrid");
+      grid.innerHTML = "";
+      const done = this.state.completed;
+      for (let n = 1; n <= 20; n++) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "level-btn";
+        const unlocked = this.state.isLevelUnlocked(n);
+        btn.disabled = !unlocked;
+        const sz = n <= 5 ? "8×8" : n <= 15 ? "16×16" : "32×32";
+        const diff = n <= 5 ? "kolay" : n <= 15 ? "orta" : "zor";
+        const isDone = !!(done[n] || done[String(n)]);
+        btn.innerHTML =
+          unlocked
+            ? `<span>${n}</span>${isDone ? '<span class="tick" title="Tamamlandı">✓</span>' : ""}<span class="meta">${sz} · ${diff}</span>`
+            : `<span class="lock" title="Kilitli">🔒</span><span class="meta">${sz}</span>`;
+        if (unlocked) btn.addEventListener("click", () => this.startLevel(n));
+        grid.appendChild(btn);
+      }
+    }
+
+    showMenu() {
+      this.painting = false;
+      this.elGame.classList.remove("active");
+      this.elMenu.classList.add("active");
+      this.buildMenu();
+    }
+
+    startLevel(n) {
+      if (!this.state.isLevelUnlocked(n)) return;
+      this.currentLevelId = n;
+      const level = Level.create(n);
+      this.surface = new PixelSurface(level);
+      this.won = false;
+
+      this.canvas.width = this.surface.w;
+      this.canvas.height = this.surface.h;
+      this.canvas.style.width = CANVAS_CSS + "px";
+      this.canvas.style.height = Math.round((CANVAS_CSS * this.surface.h) / this.surface.w) + "px";
+
+      this.renderer.render(this.surface);
+      this.updateProgressUI();
+
+      this.elMenu.classList.remove("active");
+      this.elGame.classList.add("active");
+      this.syncSprayHud();
+    }
+
+    syncSprayHud() {
+      if (this.elSprayHud) this.elSprayHud.textContent = String(this.spraySize);
+    }
+
+    restartLevel() {
+      if (this.currentLevelId) this.startLevel(this.currentLevelId);
+    }
+
+    brushRadiusCells() {
+      const g = this.surface ? Math.max(this.surface.w, this.surface.h) : 8;
+      const base = g <= 8 ? 0.55 : g <= 16 ? 0.42 : 0.28;
+      return base * this.spraySize;
+    }
+
+    sprayAtEvent(e) {
+      const s = this.surface;
+      if (!s) return;
+      let cx = e.clientX;
+      let cy = e.clientY;
+      if (e.touches && e.touches[0]) {
+        cx = e.touches[0].clientX;
+        cy = e.touches[0].clientY;
+      }
+      const rect = this.canvas.getBoundingClientRect();
+      const sx = (cx - rect.left) / rect.width;
+      const sy = (cy - rect.top) / rect.height;
+      const gx = sx * s.w - 0.5;
+      const gy = sy * s.h - 0.5;
+      const spread = s.w <= 8 ? 1.0 : s.w <= 16 ? 1.15 : 1.35;
+      s.splatterErase(gx, gy, this.brushRadiusCells(), spread);
+      this.renderer.render(s);
+      this.updateProgressUI();
+
+      if (!this.won && s.checkWinCondition()) this.onWin();
+    }
+
+    updateProgressUI() {
+      const s = this.surface;
+      if (!s) return;
+      const pct = Math.min(100, Math.floor(s.getCleanProgress() * 100));
+      this.elProgress.style.width = pct + "%";
+      this.elProgressText.textContent = "%" + pct;
+    }
+
+    onWin() {
+      this.won = true;
+      const rect = this.canvas.getBoundingClientRect();
+      const cellW = rect.width / this.surface.w;
+      const cellH = rect.height / this.surface.h;
+      const cell = (cellW + cellH) / 2;
+
+      this.burst.burstFromGrid(rect, this.surface, cell);
+
+      const ban = this.elUnlock;
+      ban.classList.remove("show");
+      void ban.offsetWidth;
+      ban.classList.add("show");
+      setTimeout(() => ban.classList.remove("show"), 2000);
+
+      this.state.markCompleted(this.currentLevelId);
+      setTimeout(() => this.buildMenu(), 400);
+    }
+  }
+
+  /** 20 seviyelik dizi — meta + Level.create ile üretim */
+  const levels = [];
+  for (let i = 1; i <= 20; i++) {
+    const gridSize = i <= 5 ? 8 : i <= 15 ? 16 : 32;
+    const tier =
+      i <= 5 ? "easy" : i <= 15 ? "medium" : "hard";
+    levels.push({
+      index: i,
+      gridSize,
+      tier,
+      getLevel: () => Level.create(i),
+    });
+  }
+
+  window.addEventListener("load", () => {
+    new Game();
+  });
+})();
+  </script>
+</body>
+</html>
