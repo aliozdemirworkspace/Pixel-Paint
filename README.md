@@ -4,10 +4,10 @@
 
 ## Yerel önizleme
 
-`index.html` dosyasını tarayıcıda açın veya basit bir sunucu ile çalıştırın:
+Oyun dosyası `public/index.html` altındadır. Yerel önizleme:
 
 ```bash
-python3 -m http.server 8080
+cd public && python3 -m http.server 8080
 ```
 
 Sonra `http://localhost:8080` adresine gidin.
